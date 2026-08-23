@@ -197,7 +197,23 @@ never leaves the user's terminal broken.
 
 ## 7. Persistence (`save.rs`)
 
-Location: `%APPDATA%\terminal-snake\profile.json` (platform config dir elsewhere).
+Persistence sits behind a trait so the core never touches the filesystem
+directly. This keeps a future WebAssembly build (Section 11) a small addition
+rather than a rewrite.
+
+```rust
+pub trait Storage {
+    fn load(&self) -> Option<String>;
+    fn save(&self, data: &str) -> Result<(), StorageError>;
+}
+```
+
+`FileStorage` is the desktop implementation; a `LocalStorage` implementation
+backs the web build. `save.rs` handles serialization, defaults, and versioning
+above the trait and is testable with an in-memory implementation.
+
+Desktop location: `%APPDATA%\terminal-snake\profile.json` (platform config dir
+elsewhere).
 
 ```jsonc
 {
@@ -269,3 +285,40 @@ Rendering beyond the quantizer is verified by eye, not by test.
 
 Public GitHub repository `SiddharthSai4701/terminal-snake`. Commit at each
 completed phase and push after each commit.
+
+## 11. Distribution
+
+The game is meant to be easy for other people to play.
+
+**Shipping in v1:**
+
+- **GitHub Releases with prebuilt binaries.** A GitHub Actions workflow builds
+  Windows x86_64, macOS x86_64 and aarch64, and Linux x86_64 on every pushed tag
+  and attaches the artifacts to the release. A player downloads one file and
+  runs it.
+- **crates.io.** `cargo install terminal-snake` for anyone with a Rust
+  toolchain.
+- **README** with an animated capture of real gameplay, install instructions per
+  platform, and controls.
+
+**Planned follow-up, designed for but not built in v1:**
+
+- **Browser build.** Compile the core to WebAssembly and drive `xterm.js` on a
+  GitHub Pages site, so the game is playable from a link with no download.
+
+**Portability constraints this imposes on v1**, which must hold from the first
+commit:
+
+1. `game/`, `render/canvas.rs`, `render/draw.rs`, `render/fx.rs`, and
+   `render/theme.rs` must not reference `std::io`, `crossterm`, the filesystem,
+   or the system clock. Time enters as a `dt` parameter; randomness enters as an
+   injected RNG.
+2. Persistence goes through the `Storage` trait (Section 7). No direct file
+   access outside `FileStorage`.
+3. The main loop's terminal setup, input polling, and frame flush are confined
+   to `main.rs`, `app.rs`, and `input.rs` — the layer a web build replaces.
+
+**Rejected: a VS Code extension.** A VS Code user already has an integrated
+terminal, so the extension would only shell out to the same binary, while
+requiring separate per-platform VSIX packages. Substantial plumbing for
+negligible added reach.
