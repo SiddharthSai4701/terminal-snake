@@ -46,6 +46,7 @@ impl Fx {
         }
     }
 
+    #[allow(dead_code)] // asserted by the effects tests and the benchmark
     pub fn live(&self) -> usize {
         self.particles.len()
     }

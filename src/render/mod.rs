@@ -1,4 +1,5 @@
 pub mod arena;
+pub mod bench;
 pub mod canvas;
 pub mod color;
 pub mod draw;

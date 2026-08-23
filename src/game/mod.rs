@@ -138,6 +138,16 @@ impl Game {
     pub fn force_food_at(&mut self, p: Pos) {
         self.food = p;
     }
+
+    /// Lengthens the snake in place, for the frame-budget benchmark.
+    #[cfg(test)]
+    pub fn grow_for_bench(&mut self, n: u32) {
+        self.snake.grow(n);
+        let mut q = crate::input::DirQueue::new(self.snake.dir());
+        for _ in 0..n {
+            self.snake.step(q.pop(), true);
+        }
+    }
 }
 
 #[cfg(test)]

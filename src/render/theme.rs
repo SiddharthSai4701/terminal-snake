@@ -4,6 +4,7 @@ use crate::render::color::{rgb_hex, Rgb};
 /// rather than as code.
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
+    #[allow(dead_code)] // shown by the theme gallery in Phase 4
     pub name: &'static str,
     pub bg: Rgb,
     pub border: Rgb,
