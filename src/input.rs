@@ -7,6 +7,7 @@ pub const QUEUE_CAP: usize = 2;
 pub enum Action {
     Turn(Direction),
     Start,
+    #[allow(dead_code)] // wired up by the pause overlay in Phase 4
     Pause,
     Restart,
     Quit,
@@ -33,14 +34,17 @@ impl DirQueue {
         }
     }
 
+    #[allow(dead_code)] // asserted by tests; read by the Phase 2 ribbon end caps
     pub fn applied(&self) -> Direction {
         self.applied
     }
 
+    #[allow(dead_code)] // asserted by the queue tests
     pub fn len(&self) -> usize {
         self.q.len()
     }
 
+    #[allow(dead_code)] // paired with len() for clippy's len_without_is_empty
     pub fn is_empty(&self) -> bool {
         self.q.is_empty()
     }

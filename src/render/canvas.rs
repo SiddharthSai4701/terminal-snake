@@ -46,6 +46,7 @@ impl Canvas {
         self.px.iter_mut().for_each(|p| *p = c);
     }
 
+    #[allow(dead_code)] // read by the canvas and arena tests
     pub fn get(&self, x: i32, y: i32) -> Rgb {
         self.idx(x, y).map(|i| self.px[i]).unwrap_or([0.0; 3])
     }
@@ -56,6 +57,7 @@ impl Canvas {
         }
     }
 
+    #[allow(dead_code)] // additive path for glow and particles in Phase 2
     pub fn add(&mut self, x: i32, y: i32, c: Rgb) {
         if let Some(i) = self.idx(x, y) {
             for k in 0..3 {
@@ -64,6 +66,7 @@ impl Canvas {
         }
     }
 
+    #[allow(dead_code)] // coverage blending for the Phase 2 SDF ribbon
     pub fn blend(&mut self, x: i32, y: i32, c: Rgb, cov: f32) {
         if let Some(i) = self.idx(x, y) {
             let a = cov.clamp(0.0, 1.0);
