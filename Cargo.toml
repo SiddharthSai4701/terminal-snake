@@ -1,0 +1,23 @@
+[package]
+name = "terminal-snake"
+version = "0.1.0"
+edition = "2021"
+description = "A terminal snake game with truecolor pixel rendering, glow, particles, and 60fps interpolated motion."
+license = "MIT"
+repository = "https://github.com/SiddharthSai4701/terminal-snake"
+
+[dependencies]
+ratatui-core = "0.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ratatui = "0.30"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = true
+codegen-units = 1
