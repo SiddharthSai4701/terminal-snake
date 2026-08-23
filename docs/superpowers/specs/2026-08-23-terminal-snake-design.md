@@ -77,18 +77,18 @@ Two grids are kept deliberately separate.
 | Border | **1 px** on every side, inside the canvas | Drawn without consuming playable cells |
 | Canvas extent | `(28·s + 2) × (18·s + 2)` px | `s` = pixel scale |
 | Pixel scale `s` | **integer 3–6**, default cap **4** | Larger terminal renders crisper, never easier |
-| Min terminal | **86 × 31** | 86 cols × 28 rows canvas + 2 HUD rows + 1 hint row |
+| Min terminal | **86 × 30** | 86 cols × 28 rows canvas + 1 HUD row + 1 hint row |
 
 Scale is an **integer**, computed with floor division against the region left
 after chrome:
 
 ```
-chrome_rows = 3
+chrome_rows = 2
 s = clamp(floor(min((cols - 2) / 28, ((rows - chrome_rows) * 2 - 2) / 18)), 3, s_max)
 s_max = 4 by default; a settings entry raises it to 6
 ```
 
-At the minimum 86×31 this yields `min(3, 3) = 3` ✓. The `s_max` default of 4 is
+At the minimum 86×30 this yields `min(3, 3) = 3` ✓. The `s_max` default of 4 is
 a throughput decision, not a visual one — see §4.6.
 
 **Scale is frozen for the duration of a run.** It is computed when the game
@@ -156,9 +156,11 @@ sRGB-encodes on the way out. Additive glow over gamma-encoded values looks washe
 out — this is the difference between glow that reads as lit and glow that reads
 as grey.
 
-**Tone map.** Linear below ~0.8, with a knee that lands exactly on 1.0. A
-Reinhard-style `x/(1+x)` never reaches 1.0, which would make the death flash grey
-instead of white.
+**Tone map.** A clamp to [0, 1], deliberately *not* a soft shoulder. A shoulder
+dims every authored theme colour by a few percent — `#8affc1` renders as 246
+rather than 255 — because authored colours sit at the top of the range the
+shoulder compresses. Overbright additive glow clips to white instead, which is
+how bloom is supposed to look, and it keeps the death flash actually white.
 
 **Trail decay is time-based, not frame-based:** `trail *= exp(-dt / tau)`, with
 `tau` a per-theme parameter in seconds. A per-frame constant makes the afterglow

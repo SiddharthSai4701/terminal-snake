@@ -38,6 +38,7 @@ impl Snake {
         self.body.len()
     }
 
+    #[allow(dead_code)] // the Phase 2 ribbon needs the heading for its end caps
     pub fn dir(&self) -> Direction {
         self.dir
     }

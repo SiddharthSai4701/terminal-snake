@@ -46,6 +46,7 @@ impl Pcg32 {
     }
 }
 
+#[allow(dead_code)] // derives the daily seed in Phase 3
 pub fn fnv1a64(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for &b in bytes {

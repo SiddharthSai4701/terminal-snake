@@ -14,7 +14,7 @@
 
 Copied verbatim from the spec. Every task's requirements implicitly include these.
 
-- Logic grid is **28 × 18 cells**, fixed. Pixel scale is an **integer 3–6**, default cap **4**. Minimum terminal **86 × 31**.
+- Logic grid is **28 × 18 cells**, fixed. Pixel scale is an **integer 3–6**, default cap **4**. Minimum terminal **86 × 30**.
 - `game/`, `render/*`, and `ui/*` must not reference `std::io`, `crossterm`, the filesystem, the system clock, or entropy. Time enters as `dt`; randomness enters as an injected RNG.
 - **The loop lives in `main.rs` alone.** `app.rs` exposes `update(&mut self, dt: f32, input: &[Action])` and `render(&mut self, buf: &mut Buffer)`.
 - **Never add `crossterm` to `[dependencies]`.** Use `ratatui::crossterm::…`. The crossterm-backed ratatui crate is declared under `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`.

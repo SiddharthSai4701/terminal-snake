@@ -42,6 +42,7 @@ impl Direction {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[allow(dead_code)] // Endless and Daily are wired up in Phase 3
 pub enum Mode {
     Classic,
     Endless,

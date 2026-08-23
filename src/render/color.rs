@@ -22,25 +22,16 @@ pub fn srgb_encode(v: f32) -> f32 {
     }
 }
 
-/// Where the highlight roll-off begins.
-pub const KNEE: f32 = 0.8;
-/// Input that maps to pure white. A Reinhard curve only approaches 1.0, which
-/// would render the death flash grey.
-pub const WHITE: f32 = 2.0;
+/// Input that maps to pure white.
+///
+/// The curve is deliberately the identity on [0, 1] rather than a soft
+/// shoulder: authored theme colours must round-trip to their exact bytes, and
+/// a shoulder dims every one of them by a few percent. Additive glow above 1.0
+/// clips to white, which is how bloom is supposed to look.
+pub const WHITE: f32 = 1.0;
 
-/// Linear below `KNEE`, then a curve that meets it with matching slope and
-/// lands exactly on 1.0 at `WHITE`.
 pub fn tone_map(v: f32) -> f32 {
-    if v <= KNEE {
-        v.max(0.0)
-    } else if v >= WHITE {
-        1.0
-    } else {
-        let t = (v - KNEE) / (WHITE - KNEE);
-        // Exponent chosen so the derivative is continuous at the knee.
-        let n = (WHITE - KNEE) / (1.0 - KNEE);
-        KNEE + (1.0 - KNEE) * (1.0 - (1.0 - t).powf(n))
-    }
+    v.clamp(0.0, WHITE)
 }
 
 /// Quantize to 5 bits per channel. Indistinguishable on screen, but it lets
@@ -121,21 +112,22 @@ mod tests {
 
     #[test]
     fn tone_map_reaches_exactly_one_so_the_death_flash_is_white() {
-        assert_eq!(tone_map(WHITE), 1.0);
+        assert_eq!(tone_map(1.0), 1.0);
         assert_eq!(tone_map(4.0), 1.0);
-        assert!((tone_map(0.5) - 0.5).abs() < 1e-6, "linear below the knee");
-        assert!((tone_map(KNEE) - KNEE).abs() < 1e-6, "continuous at the knee");
     }
 
     #[test]
-    fn tone_map_is_monotonic_and_bounded() {
-        let mut prev = -1.0f32;
-        for i in 0..=400 {
-            let v = tone_map(i as f32 / 100.0);
-            assert!(v >= prev - 1e-6, "not monotonic at {i}");
-            assert!((0.0..=1.0).contains(&v));
-            prev = v;
+    fn tone_map_is_the_identity_so_authored_colours_round_trip() {
+        for i in 0..=255u32 {
+            let v = i as f32 / 255.0;
+            assert!((tone_map(v) - v).abs() < 1e-9, "dimmed at {i}");
         }
+        assert_eq!(to_u8(srgb_encode(srgb_decode(1.0))), 255);
+    }
+
+    #[test]
+    fn tone_map_clamps_negative_light_to_black() {
+        assert_eq!(tone_map(-3.0), 0.0);
     }
 
     #[test]

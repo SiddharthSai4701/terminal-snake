@@ -7,7 +7,7 @@ pub mod types;
 use crate::input::DirQueue;
 use rng::Pcg32;
 use snake::{Snake, StepOutcome};
-pub use types::{Direction, Mode, Pos, GRID_H, GRID_W};
+pub use types::{Direction, Mode, Pos};
 
 pub const START: Pos = Pos::new(9, 9);
 pub const START_LEN: usize = 4;
@@ -55,6 +55,7 @@ impl Game {
         }
     }
 
+    #[allow(dead_code)] // used by the mode-specific screens in Phase 3
     pub fn mode(&self) -> Mode {
         self.mode
     }
@@ -79,6 +80,7 @@ impl Game {
 
     /// How far the snake is between its current cell and the next one, for
     /// render interpolation.
+    #[allow(dead_code)] // drives ribbon interpolation in Phase 2
     pub fn tick_fraction(&self) -> f32 {
         (self.acc / (self.tick_ms / 1000.0)).clamp(0.0, 1.0)
     }
