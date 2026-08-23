@@ -55,6 +55,12 @@ impl Snake {
         self.grow += n;
     }
 
+    /// True while the body still owes segments, which is what tells the
+    /// renderer not to retract the tail this tick.
+    pub fn is_growing(&self) -> bool {
+        self.grow > 0
+    }
+
     pub fn step(&mut self, dir: Direction, wrap: bool) -> StepOutcome {
         self.dir = dir;
         let (dx, dy) = dir.delta();

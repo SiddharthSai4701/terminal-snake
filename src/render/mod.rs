@@ -2,6 +2,8 @@ pub mod arena;
 pub mod canvas;
 pub mod color;
 pub mod draw;
+pub mod fx;
 pub mod layout;
+pub mod ribbon;
 pub mod theme;
 pub mod tier;

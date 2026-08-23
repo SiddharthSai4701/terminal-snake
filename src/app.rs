@@ -9,7 +9,10 @@ use crate::game::{Game, GameState, Mode};
 use crate::input::{Action, DirQueue};
 use crate::render::arena::draw_arena;
 use crate::render::canvas::{Canvas, ColorTier};
+use crate::render::fx::Fx;
 use crate::render::layout::Layout;
+use crate::render::ribbon::snake_path;
+use crate::render::theme::Theme;
 use crate::render::tier::Tier;
 use crate::ui::hud::{hint_for, render_hud};
 use crate::ui::resize::render_resize;
@@ -25,6 +28,12 @@ pub struct App {
     layout: Option<Layout>,
     tier: Tier,
     quit: bool,
+    fx: Fx,
+    theme: Theme,
+    clock: f32,
+    last_dt: f32,
+    last_score: u32,
+    last_state: GameState,
 }
 
 impl App {
@@ -38,7 +47,18 @@ impl App {
             layout: None,
             tier: Tier::Full,
             quit: false,
+            fx: Fx::new(seed ^ 0x9e37_79b9_7f4a_7c15),
+            theme: Theme::default_theme(),
+            clock: 0.0,
+            last_dt: 1.0 / 60.0,
+            last_score: 0,
+            last_state: GameState::AwaitingStart,
         }
+    }
+
+    #[allow(dead_code)] // read by the effects tests
+    pub fn fx(&self) -> &Fx {
+        &self.fx
     }
 
     #[allow(dead_code)] // read by tests now, by the HUD and summary screens in later phases
@@ -63,6 +83,9 @@ impl App {
             .wrapping_add(1442695040888963407);
         self.game = Game::new(Mode::Classic, self.seed);
         self.queue = DirQueue::new(Direction::Right);
+        self.fx.clear();
+        self.last_score = 0;
+        self.last_state = GameState::AwaitingStart;
     }
 
     pub fn update(&mut self, dt: f32, input: &[Action]) {
@@ -83,6 +106,35 @@ impl App {
             }
         }
         self.game.advance(dt, &mut self.queue);
+        self.clock += dt;
+        self.last_dt = dt;
+        self.fx.update(dt);
+        self.emit_events();
+    }
+
+    /// Turns the difference between two game states into effects, so `game/`
+    /// never has to know that a renderer exists.
+    fn emit_events(&mut self) {
+        let scale = self.layout.map(|l| l.scale as i32).unwrap_or(4);
+        if self.game.score > self.last_score {
+            let head = self.game.snake().head();
+            let (dx, dy) = self.game.snake().dir().delta();
+            let at = (
+                crate::render::ribbon::cell_centre(head.x, scale),
+                crate::render::ribbon::cell_centre(head.y, scale),
+            );
+            self.fx
+                .emit_eat(at, (dx as f32, dy as f32), self.theme.food);
+        }
+        self.last_score = self.game.score;
+
+        if self.last_state != self.game.state
+            && matches!(self.game.state, GameState::Dead | GameState::Won)
+        {
+            let path = snake_path(self.game.snake(), 0.0, scale, self.game.mode().wraps());
+            self.fx.emit_death(&path, self.theme.body_head);
+        }
+        self.last_state = self.game.state;
     }
 
     pub fn render(&mut self, buf: &mut Buffer) {
@@ -98,13 +150,26 @@ impl App {
             self.layout = Some(layout);
         }
 
-        draw_arena(&mut self.canvas, &self.game, &layout);
+        draw_arena(
+            &mut self.canvas,
+            &self.game,
+            &layout,
+            &self.theme,
+            &self.fx,
+            self.last_dt,
+            self.clock,
+        );
         let tier = match self.tier {
             Tier::Reduced => ColorTier::Reduced,
             _ => ColorTier::Full,
         };
         self.canvas
-            .quantize_into(buf, (layout.origin_col, layout.origin_row), tier, (0.0, 0.0));
+            .quantize_into(
+                buf,
+                (layout.origin_col, layout.origin_row),
+                tier,
+                self.fx.shake_offset(),
+            );
 
         render_hud(
             buf,
