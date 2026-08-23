@@ -109,6 +109,34 @@ conhost, redirected output), crossterm silently falls back to a 16-color WinAPI
 path and every color collapses to mud. Check ANSI support at startup and exit
 with a clear message rather than rendering garbage.
 
+### 3.1 Terminal capability tiers
+
+Rust and crossterm make the game *build and run* everywhere; they do not make
+every terminal capable of this design. Capability is detected once at startup and
+the renderer picks a tier.
+
+| Tier | Condition | Output |
+|---|---|---|
+| **Full** | truecolor available | `Color::Rgb` per cell, as designed |
+| **Reduced** | 256-color only | quantizer maps each RGB to the nearest xterm-256 index (6×6×6 cube + 24 greys); a one-line banner on first run says the terminal is limited |
+| **Refused** | 16-color or no ANSI | clear message naming the problem and suggesting a modern terminal; exit rather than render mud |
+
+Truecolor is detected from `COLORTERM` (`truecolor` / `24bit`), then `TERM`
+(`*-direct`, `*-256color`), then a Windows Terminal / known-emulator check, with
+an explicit `--truecolor` / `--256` override for terminals that support it
+without advertising. **macOS Terminal.app is the notable Reduced-tier case** —
+it has never supported 24-bit color, so an unguarded build would look broken to
+every default-Terminal Mac user. iTerm2, WezTerm, Alacritty, Ghostty, and kitty
+are all Full tier.
+
+The nearest-256 mapping lives in the quantizer and is a pure function, so it is
+unit-tested like the rest of §4.2 rather than being a special render path.
+
+**Multiplexers.** Under `tmux` or `screen` (`TERM` starts `tmux`/`screen`, or
+`TMUX` is set), DEC 2026 synchronized output is not passed through by default and
+the escape is suppressed rather than emitted blind. The adaptive 30fps fallback
+in §4.6 covers the resulting tear risk.
+
 ## 4. Rendering system
 
 ### 4.1 Pixel canvas
