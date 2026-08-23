@@ -30,7 +30,7 @@ fn fill_cell(c: &mut Canvas, cell_x: i32, cell_y: i32, scale: i32, col: Rgb, ins
 
 pub fn draw_arena(c: &mut Canvas, game: &Game, layout: &Layout) {
     let s = layout.scale as i32;
-    c.clear(rgb_hex(BG));
+    c.clear_base(rgb_hex(BG));
 
     let border = rgb_hex(BORDER);
     let w = c.width() as i32;

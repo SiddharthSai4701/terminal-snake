@@ -104,7 +104,7 @@ impl App {
             _ => ColorTier::Full,
         };
         self.canvas
-            .quantize_into(buf, (layout.origin_col, layout.origin_row), tier);
+            .quantize_into(buf, (layout.origin_col, layout.origin_row), tier, (0.0, 0.0));
 
         render_hud(
             buf,
