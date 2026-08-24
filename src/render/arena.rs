@@ -70,17 +70,13 @@ pub fn draw_arena(
     );
     // Radius and softness both in cell units, so the dot reads the same at any
     // scale instead of turning into a hard square at small ones.
-    let food_r = 0.20 * s as f32 * pulse;
+    // The food keeps its glow - it is the thing you are looking for.
     stroke_segment(
         c,
         fx_pos,
         fx_pos,
         theme.food,
-        &Stroke {
-            radius: food_r,
-            falloff: 0.40 * s as f32,
-            pixel_aspect: 1.0,
-        },
+        &Stroke::soft_dot(0.20 * s as f32 * pulse, layout.scale),
     );
     c.add_glow(
         fx_pos.0,
@@ -90,7 +86,7 @@ pub fn draw_arena(
 
     // The body: one capsule per segment, each with its own ramp colour, so the
     // cost is O(length x scale^2) rather than O(length x arena).
-    let stroke = Stroke::for_scale(layout.scale);
+    let stroke = Stroke::body(layout.scale);
     let path = snake_path(game.snake(), game.tick_fraction(), s, game.mode().wraps());
     let n = path.len().max(1);
     let dim = if dead { 0.30 } else { 1.0 };
@@ -116,23 +112,11 @@ pub fn draw_arena(
             stroke_segment(c, a, b, col, &stroke);
         }
 
+        // The snake itself carries no glow and lays no trail: crisp body,
+        // the way the first build drew it. Glow is reserved for the food and
+        // for dying, so it means something when it appears.
         let head = path[0];
-        disc(c, head, stroke.radius * 1.05, theme.body_head, 1.0);
-        c.add_glow(head.0, head.1, scale_rgb(theme.glow_tint, 0.38));
-
-        // Deposited as a RATE, not a per-frame amount. A fixed amount per frame
-        // converges to deposit/(1 - exp(-dt/tau)) - about nine times the
-        // intended value at 60fps - and lands somewhere different on every
-        // refresh rate. Scaling by dt/tau makes the steady state exactly
-        // TRAIL_STRENGTH regardless of frame rate.
-        if game.state == GameState::Running {
-            let deposit = TRAIL_STRENGTH * (dt / theme.trail_tau).min(1.0);
-            c.add_trail(
-                head.0.round() as i32,
-                head.1.round() as i32,
-                scale_rgb(theme.glow_tint, deposit),
-            );
-        }
+        stroke_segment(c, head, head, theme.body_head, &stroke);
     } else {
         // Once dead the body has been handed to the particle system; leave a
         // dim ghost of where it was.
@@ -245,93 +229,50 @@ mod tests {
         }
     }
 
-    /// Runs the snake far enough right that its starting cell is both trailed
-    /// and vacated, and returns that cell.
-    fn run_past_start(g: &mut Game, l: &Layout, c: &mut Canvas, th: &Theme, fx: &Fx) -> (i32, i32) {
+    #[test]
+    fn the_snake_lays_no_trail_and_carries_no_glow() {
+        // Glow is reserved for the food and for dying. A cell the snake has
+        // left must return to the backdrop, and the space just outside the
+        // body must not be lit by a halo.
+        let (mut g, l, mut c, fx, th) = setup(3);
         let mut q = DirQueue::new(Direction::Right);
         g.start();
         let start = g.snake().head();
-        // Drawn first, so the head lays a trail on the starting cell itself.
-        draw_arena(c, g, l, th, fx, 0.016, 0.0);
-        // Advance only until the body clears that cell - the afterglow is
-        // deliberately short-lived, so waiting longer measures nothing.
+        draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
         while g.snake().contains(start) {
             g.advance(0.14, &mut q);
-            draw_arena(c, g, l, th, fx, 0.016, 0.0);
+            draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
         }
-        assert!(!g.snake().contains(start), "the start cell should be vacated");
-        cell_px(l, start.x, start.y)
-    }
 
-    #[test]
-    fn the_snake_leaves_an_afterglow_behind_it() {
-        let (mut g, l, mut c, fx, th) = setup(3);
         let (bx, by) = cell_px(&l, 2, 15);
-        let (x, y) = run_past_start(&mut g, &l, &mut c, &th, &fx);
         let backdrop = c.sample(bx, by).iter().sum::<f32>();
+        let (x, y) = cell_px(&l, start.x, start.y);
         assert!(
-            c.sample(x, y).iter().sum::<f32>() > backdrop + 0.01,
-            "a vacated cell should still glow"
+            (c.sample(x, y).iter().sum::<f32>() - backdrop).abs() < 1e-3,
+            "a vacated cell still glows"
+        );
+
+        let head = g.snake().head();
+        let (hx, hy) = cell_px(&l, head.x, head.y);
+        let beside = c.sample(hx, hy + l.scale as i32).iter().sum::<f32>();
+        assert!(
+            (beside - backdrop).abs() < 0.02,
+            "there is a halo beside the body: {beside} against {backdrop}"
         );
     }
 
     #[test]
-    fn the_trail_fades_out_over_time() {
-        let (mut g, l, mut c, fx, th) = setup(3);
+    fn the_food_still_glows() {
+        let (g, l, mut c, fx, th) = setup(9);
+        draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
+        let (fx_x, fy) = cell_px(&l, g.food().x, g.food().y);
         let (bx, by) = cell_px(&l, 2, 15);
-        let (x, y) = run_past_start(&mut g, &l, &mut c, &th, &fx);
-        // Measured against an untouched cell rather than zero: the backdrop is
-        // not black, so it would otherwise dominate the ratio.
         let backdrop = c.sample(bx, by).iter().sum::<f32>();
-        let lit = c.sample(x, y).iter().sum::<f32>();
-        assert!(lit > backdrop + 0.01, "no trail was laid down");
-
-        for _ in 0..40 {
-            draw_arena(&mut c, &g, &l, &th, &fx, 0.05, 0.0);
-        }
-        let faded = c.sample(x, y).iter().sum::<f32>();
+        // One cell away from the food there should still be light.
+        let halo = c.sample(fx_x + l.scale as i32, fy).iter().sum::<f32>();
         assert!(
-            faded - backdrop < (lit - backdrop) * 0.05,
-            "the trail should have faded: lit {lit}, faded {faded}, backdrop {backdrop}"
-        );
-    }
-
-    #[test]
-    fn the_trail_does_not_pile_up_while_the_snake_is_waiting_to_start() {
-        // Before the first keypress the head never moves, so depositing trail
-        // once per frame accumulates on a single cell until it clips.
-        let (g, l, mut c, fx, th) = setup(1);
-        let (x, y) = cell_px(&l, g.snake().head().x, g.snake().head().y);
-        for _ in 0..240 {
-            draw_arena(&mut c, &g, &l, &th, &fx, 1.0 / 60.0, 0.0);
-        }
-        let lit = c.sample(x, y);
-        assert!(
-            lit.iter().all(|v| *v <= 1.6),
-            "an idle head blew out to {lit:?}"
-        );
-    }
-
-    #[test]
-    fn the_trail_looks_the_same_at_thirty_and_sixty_frames_per_second() {
-        let sample_at = |dt: f32, frames: usize| {
-            let (mut g, l, mut c, fx, th) = setup(3);
-            let mut q = DirQueue::new(Direction::Right);
-            g.start();
-            let start = g.snake().head();
-            draw_arena(&mut c, &g, &l, &th, &fx, dt, 0.0);
-            for i in 0..frames {
-                g.advance(dt, &mut q);
-                draw_arena(&mut c, &g, &l, &th, &fx, dt, i as f32 * dt);
-            }
-            let (x, y) = cell_px(&l, start.x, start.y);
-            c.sample(x, y).iter().sum::<f32>()
-        };
-        let sixty = sample_at(1.0 / 60.0, 48);
-        let thirty = sample_at(1.0 / 30.0, 24);
-        assert!(
-            (sixty - thirty).abs() < 0.1 * sixty.max(thirty).max(1e-3),
-            "frame-rate dependent trail: 60fps {sixty}, 30fps {thirty}"
+            halo > backdrop + 0.01,
+            "the food lost its glow: {halo} against {backdrop}"
         );
     }
 

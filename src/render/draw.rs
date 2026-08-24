@@ -18,27 +18,32 @@ pub struct Stroke {
 }
 
 impl Stroke {
-    /// Radius and falloff both scale with the pixel scale.
+    /// The snake body: crisp, filling its cell, the way the first build drew
+    /// it with solid squares.
     ///
-    /// Two constraints pin these numbers. A fixed falloff makes the body
-    /// entirely falloff at scale 3 - a smudge with no solid core - so both
-    /// terms scale.
+    /// The radius is set so an axis-aligned run lights exactly one cell's worth
+    /// of pixels. The falloff is a fixed sub-pixel value on purpose:
+    /// axis-aligned edges land on pixel boundaries and stay perfectly sharp,
+    /// while diagonals pick up just enough coverage to avoid stair-stepping.
     ///
-    /// The falloff must also span at least a whole pixel. A cell is only 3 to 6
-    /// pixels across, so a sub-pixel falloff produces no intermediate coverage
-    /// at all and the body renders as a hard-edged bar - antialiasing that
-    /// exists in the arithmetic but never in the output.
-    ///
-    /// That competes with keeping a dark pixel between the parallel runs of a
-    /// tight coil, and at this resolution the edge wins: a coil that reads as a
-    /// slightly soft tube is far better than a snake with stair-stepped edges.
-    /// The gap still darkens to roughly a quarter of the core at scale 4 and
-    /// above.
-    pub fn for_scale(scale: u32) -> Stroke {
-        let s = scale as f32;
+    /// A body this wide means the parallel runs of a tight coil touch rather
+    /// than showing a dark line between them. That is deliberate - it is how
+    /// the original build drew it, and a coil reading as one solid mass is the
+    /// classic look. Keeping a gap would mean a body noticeably narrower than
+    /// its cell.
+    pub fn body(scale: u32) -> Stroke {
         Stroke {
-            radius: 0.19 * s,
-            falloff: 0.36 * s,
+            radius: 0.38 * scale as f32,
+            falloff: 0.6,
+            pixel_aspect: 1.0,
+        }
+    }
+
+    /// A soft round dot - used for the food, which keeps its glow.
+    pub fn soft_dot(radius: f32, scale: u32) -> Stroke {
+        Stroke {
+            radius,
+            falloff: 0.40 * scale as f32,
             pixel_aspect: 1.0,
         }
     }
@@ -228,9 +233,9 @@ mod tests {
     }
 
     #[test]
-    fn stroke_for_scale_keeps_a_solid_core_at_every_scale() {
+    fn the_body_keeps_a_solid_core_at_every_scale() {
         for scale in 3..=6u32 {
-            let s = Stroke::for_scale(scale);
+            let s = Stroke::body(scale);
             assert!(
                 s.radius > s.falloff * 0.5,
                 "scale {scale}: radius {} vs falloff {}",
@@ -248,64 +253,41 @@ mod tests {
     }
 
     #[test]
-    fn the_falloff_always_spans_at_least_one_pixel() {
-        // Below one pixel there are no intermediate coverage values and the
-        // antialiasing silently stops existing.
+    fn the_body_fills_its_cell_and_no_more() {
         for scale in 3..=6u32 {
-            let st = Stroke::for_scale(scale);
+            let mut c = blank(64, 64);
+            let st = Stroke::body(scale);
+            stroke_segment(&mut c, (8.0, 32.0), (56.0, 32.0), [1.0; 3], &st);
+            let lit = (20..=44).filter(|y| c.get(32, *y)[0] > 0.5).count();
             assert!(
-                st.falloff >= 1.0,
-                "scale {scale}: falloff {} is sub-pixel",
-                st.falloff
+                lit <= scale as usize && lit >= scale as usize - 1,
+                "scale {scale}: body is {lit} pixels thick"
             );
         }
     }
 
     #[test]
-    fn a_body_cross_section_has_genuinely_soft_edges() {
+    fn the_body_edge_is_crisp_not_blurred() {
+        // The first build's look: a solid bar with hard edges. At most one
+        // partially-lit pixel per side, so it never reads as a smudge.
         for scale in 3..=6u32 {
             let mut c = blank(64, 64);
-            let st = Stroke::for_scale(scale);
+            let st = Stroke::body(scale);
             stroke_segment(&mut c, (8.0, 32.0), (56.0, 32.0), [1.0; 3], &st);
-            let partial = (24..=40)
+            let partial = (20..=44)
                 .filter(|y| {
                     let v = c.get(32, *y)[0];
-                    v > 0.12 && v < 0.88
+                    v > 0.05 && v < 0.95
                 })
                 .count();
-            assert!(
-                partial >= 2,
-                "scale {scale}: {partial} partially-lit pixels - the edge is hard"
-            );
-        }
-    }
-
-    #[test]
-    fn two_parallel_runs_one_cell_apart_stay_distinguishable() {
-        // A tight coil puts body one cell from body. The gap need not be black,
-        // but it must be clearly darker than the body either side of it.
-        for scale in 4..=6u32 {
-            let mut c = blank(64, 64);
-            let st = Stroke::for_scale(scale);
-            let s = scale as f32;
-            let (y0, y1) = (32.0, 32.0 + s);
-            stroke_segment(&mut c, (8.0, y0), (56.0, y0), [1.0; 3], &st);
-            stroke_segment(&mut c, (8.0, y1), (56.0, y1), [1.0; 3], &st);
-            let core = c.get(32, y0 as i32)[0];
-            let gap = (y0 as i32 + 1..y1 as i32)
-                .map(|y| c.get(32, y)[0])
-                .fold(f32::INFINITY, f32::min);
-            assert!(
-                gap < core * 0.45,
-                "scale {scale}: gap {gap} against core {core} - the coil merged"
-            );
+            assert!(partial <= 2, "scale {scale}: {partial} soft pixels on the edge");
         }
     }
 
     #[test]
     fn a_diagonal_segment_is_continuous() {
         let mut c = blank(40, 40);
-        let s = Stroke::for_scale(4);
+        let s = Stroke::body(4);
         stroke_segment(&mut c, (8.0, 8.0), (32.0, 32.0), [1.0; 3], &s);
         for i in 10..30 {
             assert!(

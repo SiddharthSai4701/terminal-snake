@@ -235,7 +235,16 @@ for Cascadia Mono at Windows Terminal's default line height, but breaks under a
 different font or line-height. One multiply makes the SDF robust to that.
 
 Body color is a head-to-tail gradient through the theme ramp with a
-time-advancing highlight band, so the snake looks glossy even at rest.
+time-advancing highlight band.
+
+**The body is drawn crisp, and carries no glow and no trail.** The radius fills
+one cell and the falloff is a fixed sub-pixel value, so axis-aligned edges land
+on pixel boundaries and stay sharp while diagonals pick up just enough coverage
+to avoid stair-stepping. A cell is only 3-6 pixels across, and at that
+resolution a soft-edged ribbon reads as a smudge rather than as a snake. Glow is
+reserved for the food and the death burst, so that when something glows it
+carries meaning. The parallel runs of a tight coil therefore touch rather than
+showing a dark line between them, which is the classic look.
 
 ### 4.4 Effects (`render/fx.rs`)
 

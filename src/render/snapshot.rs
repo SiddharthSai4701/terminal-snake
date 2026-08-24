@@ -232,7 +232,7 @@ mod tests {
         use crate::render::draw::{stroke_segment, Stroke};
 
         for scale in [3u32, 4, 6] {
-            let st = Stroke::for_scale(scale);
+            let st = Stroke::body(scale);
             let mut c = Canvas::new(64, 64);
             c.clear_base([0.0; 3]);
             stroke_segment(&mut c, (8.0, 32.0), (56.0, 32.0), [1.0; 3], &st);
