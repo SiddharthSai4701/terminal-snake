@@ -117,11 +117,21 @@ impl Canvas {
         }
     }
 
-    /// Separable 5-tap Gaussian, two passes, at half resolution.
+    /// Separable binomial blur at half resolution, applied twice.
     ///
-    /// Without this the glow buffer is not bloom at all - additive brightness
-    /// with no spatial spread is just a brighter pixel.
+    /// Without any blur the glow buffer is not bloom at all - additive
+    /// brightness with no spatial spread is just a brighter pixel.
+    ///
+    /// Twice, because a single 5-tap binomial is a poor Gaussian: its support
+    /// is visibly square, measuring 2.2x brighter along the diagonal than along
+    /// the axis at the same distance, and it cuts off abruptly. Running it
+    /// again approximates a 9-tap kernel, which is round and has a soft tail.
     pub fn blur_glow(&mut self) {
+        self.blur_pass();
+        self.blur_pass();
+    }
+
+    fn blur_pass(&mut self) {
         const K: [f32; 5] = [0.0625, 0.25, 0.375, 0.25, 0.0625];
         let (gw, gh) = (self.gw, self.gh);
 
@@ -533,6 +543,51 @@ mod tests {
             "{repeats} flat steps across {} lit pixels: upsample is blocky",
             lit.len()
         );
+    }
+
+    #[test]
+    fn the_glow_falls_off_in_a_circle_not_a_square() {
+        // A single binomial pass has visibly square support - brighter along
+        // the diagonal than along the axis at the same distance - which reads
+        // as a rectangular halo around everything that glows.
+        let mut c = Canvas::new(80, 80);
+        c.clear_base([0.0; 3]);
+        c.add_glow(40.0, 40.0, [1.0, 1.0, 1.0]);
+        c.blur_glow();
+        let peak = c.sample(40, 40)[0];
+
+        for d in [2i32, 4, 6] {
+            let axis = c.sample(40 + d, 40)[0] / peak;
+            if axis < 0.05 {
+                continue;
+            }
+            let dd = (d as f32 / std::f32::consts::SQRT_2).round() as i32;
+            let diag = c.sample(40 + dd, 40 + dd)[0] / peak;
+            let ratio = diag / axis;
+            assert!(
+                (0.6..=1.6).contains(&ratio),
+                "at distance {d} the falloff is {ratio:.2}x brighter diagonally"
+            );
+        }
+    }
+
+    #[test]
+    fn the_glow_has_a_soft_tail_rather_than_a_hard_edge() {
+        let mut c = Canvas::new(80, 80);
+        c.clear_base([0.0; 3]);
+        c.add_glow(40.0, 40.0, [1.0, 1.0, 1.0]);
+        c.blur_glow();
+        let peak = c.sample(40, 40)[0];
+        // No single step may drop more than half the remaining brightness, or
+        // the boundary of the halo is visible as an edge.
+        for d in 1..10 {
+            let a = c.sample(40 + d, 40)[0] / peak;
+            let b = c.sample(40 + d + 1, 40)[0] / peak;
+            if a < 0.05 {
+                break;
+            }
+            assert!(b > a * 0.4, "hard step from {a:.3} to {b:.3} at distance {d}");
+        }
     }
 
     #[test]

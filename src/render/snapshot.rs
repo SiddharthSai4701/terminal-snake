@@ -67,10 +67,8 @@ mod tests {
         println!("wrote {path} ({}x{})", w * ZOOM, h * ZOOM);
     }
 
-    fn snapshot(name: &str, food_runs: usize, kill: bool) {
-        let cols = 120u16;
-        let rows = 40u16;
-        let l = Layout::compute(cols, rows, 4).unwrap();
+    fn snapshot_at(name: &str, cols: u16, rows: u16, food_runs: usize, kill: bool) {
+        let l = Layout::compute(cols, rows, 6).unwrap();
         let theme = Theme::default_theme();
         let mut c = Canvas::new(l.canvas_w, l.canvas_h);
         let mut fx = Fx::new(7);
@@ -138,13 +136,24 @@ mod tests {
     #[test]
     #[cfg_attr(debug_assertions, ignore = "run in release: cargo test --release snapshot")]
     fn snapshot_play() {
-        snapshot("target/frame_play.ppm", 6, false);
+        snapshot_at("target/frame_play.ppm", 120, 40, 6, false);
     }
 
     #[test]
     #[cfg_attr(debug_assertions, ignore = "run in release: cargo test --release snapshot")]
     fn snapshot_death() {
-        snapshot("target/frame_death.ppm", 4, true);
+        snapshot_at("target/frame_death.ppm", 120, 40, 4, true);
+    }
+
+    /// The same scene at every pixel scale, to show what window size buys.
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "run in release: cargo test --release snapshot")]
+    fn snapshot_every_scale() {
+        for (cols, rows, scale) in [(86u16, 30u16, 3u32), (120, 40, 4), (142, 48, 5), (170, 57, 6)] {
+            let l = Layout::compute(cols, rows, 6).unwrap();
+            assert_eq!(l.scale, scale, "{cols}x{rows}");
+            snapshot_at(&format!("target/frame_scale{scale}.ppm"), cols, rows, 6, false);
+        }
     }
 
     fn snap_bits(v: f32, bits: u32) -> u8 {
@@ -259,6 +268,26 @@ mod tests {
             .filter(|d| c.sample(32 + d, 32)[0] / peak > 0.10)
             .count();
         println!("glow stays above 10% of peak for {reach} px = {:.1} cells at scale 4", reach as f32 / 4.0);
+    }
+
+    #[test]
+    #[cfg_attr(debug_assertions, ignore = "run in release: cargo test --release snapshot")]
+    fn report_glow_roundness() {
+        let mut c = Canvas::new(80, 80);
+        c.clear_base([0.0; 3]);
+        c.add_glow(40.0, 40.0, [1.0, 1.0, 1.0]);
+        c.blur_glow();
+        let peak = c.sample(40, 40)[0];
+        println!("distance | along axis | along diagonal | ratio");
+        for d in [2, 4, 6, 8, 10] {
+            let axis = c.sample(40 + d, 40)[0] / peak;
+            let dd = (d as f32 / std::f32::consts::SQRT_2).round() as i32;
+            let diag = c.sample(40 + dd, 40 + dd)[0] / peak;
+            println!(
+                "{d:>8} | {axis:>10.3} | {diag:>14.3} | {:.2}",
+                if axis > 1e-6 { diag / axis } else { 0.0 }
+            );
+        }
     }
 
     #[test]

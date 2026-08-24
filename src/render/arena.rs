@@ -70,7 +70,7 @@ pub fn draw_arena(
     );
     // Radius and softness both in cell units, so the dot reads the same at any
     // scale instead of turning into a hard square at small ones.
-    let food_r = 0.26 * s as f32 * pulse;
+    let food_r = 0.20 * s as f32 * pulse;
     stroke_segment(
         c,
         fx_pos,
@@ -78,14 +78,14 @@ pub fn draw_arena(
         theme.food,
         &Stroke {
             radius: food_r,
-            falloff: 0.34 * s as f32,
+            falloff: 0.40 * s as f32,
             pixel_aspect: 1.0,
         },
     );
     c.add_glow(
         fx_pos.0,
         fx_pos.1,
-        scale_rgb(theme.food, 0.28 * pulse),
+        scale_rgb(theme.food, 0.34 * pulse),
     );
 
     // The body: one capsule per segment, each with its own ramp colour, so the
