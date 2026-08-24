@@ -30,9 +30,9 @@ impl Theme {
             food: rgb_hex(0xff5566),
             glow_tint: rgb_hex(0x2bffa0),
             highlight: rgb_hex(0xffffff),
-            trail_tau: 0.20,
-            trail_gain: 0.35,
-            glow_gain: 0.75,
+            trail_tau: 0.35,
+            trail_gain: 0.30,
+            glow_gain: 0.50,
         }
     }
 

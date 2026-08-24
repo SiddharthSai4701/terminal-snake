@@ -15,7 +15,7 @@ const HIGHLIGHT_SPEED: f32 = 0.55;
 const HIGHLIGHT_WIDTH: f32 = 0.13;
 /// Steady-state trail brightness under a stationary head, as a multiple of the
 /// theme's glow tint.
-const TRAIL_STRENGTH: f32 = 0.55;
+const TRAIL_STRENGTH: f32 = 0.9;
 /// Radius of the death flash as a fraction of the canvas width.
 const FLASH_SIGMA: f32 = 0.16;
 /// How much of the flash reaches the far corners. Small on purpose: a uniform
@@ -63,22 +63,29 @@ pub fn draw_arena(
     draw_border(c, theme.border);
 
     // Food breathes so an idle board is never completely static.
-    let pulse = 0.75 + 0.25 * (clock * 3.4).sin();
+    let pulse = 0.85 + 0.15 * (clock * 3.4).sin();
     let fx_pos = (
         cell_centre(game.food().x, s),
         cell_centre(game.food().y, s),
     );
-    disc(
+    // Radius and softness both in cell units, so the dot reads the same at any
+    // scale instead of turning into a hard square at small ones.
+    let food_r = 0.26 * s as f32 * pulse;
+    stroke_segment(
         c,
         fx_pos,
-        0.34 * s as f32 + 0.10 * s as f32 * pulse,
+        fx_pos,
         theme.food,
-        1.0,
+        &Stroke {
+            radius: food_r,
+            falloff: 0.34 * s as f32,
+            pixel_aspect: 1.0,
+        },
     );
     c.add_glow(
         fx_pos.0,
         fx_pos.1,
-        scale_rgb(theme.food, 0.55 * pulse),
+        scale_rgb(theme.food, 0.28 * pulse),
     );
 
     // The body: one capsule per segment, each with its own ramp colour, so the
@@ -111,7 +118,7 @@ pub fn draw_arena(
 
         let head = path[0];
         disc(c, head, stroke.radius * 1.05, theme.body_head, 1.0);
-        c.add_glow(head.0, head.1, scale_rgb(theme.glow_tint, 0.85));
+        c.add_glow(head.0, head.1, scale_rgb(theme.glow_tint, 0.38));
 
         // Deposited as a RATE, not a per-frame amount. A fixed amount per frame
         // converges to deposit/(1 - exp(-dt/tau)) - about nine times the
@@ -246,7 +253,9 @@ mod tests {
         let start = g.snake().head();
         // Drawn first, so the head lays a trail on the starting cell itself.
         draw_arena(c, g, l, th, fx, 0.016, 0.0);
-        for _ in 0..8 {
+        // Advance only until the body clears that cell - the afterglow is
+        // deliberately short-lived, so waiting longer measures nothing.
+        while g.snake().contains(start) {
             g.advance(0.14, &mut q);
             draw_arena(c, g, l, th, fx, 0.016, 0.0);
         }

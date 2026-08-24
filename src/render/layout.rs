@@ -8,9 +8,15 @@ pub const CHROME_ROWS: u16 = 2;
 /// One border pixel on each side.
 pub const BORDER_PX: usize = 2;
 pub const MIN_SCALE: u32 = 3;
-/// Capped at 4 by default: scale 6 pushes ~21 MB/s of per-cell truecolour SGR,
-/// which is at or past what Windows Terminal sustains.
-pub const DEFAULT_MAX_SCALE: u32 = 4;
+/// Uncapped by default.
+///
+/// This was 4, on the estimate that scale 6 would push ~21 MB/s of per-cell
+/// truecolour SGR - at or past what Windows Terminal sustains. That estimate
+/// assumed every cell changes every frame. Measured, about 42% of pixels change
+/// per frame in a moving scene, so scale 6 costs nearer 8.7 MB/s. Since a cell
+/// is only 3 to 6 pixels across, every extra pixel of scale is a large gain in
+/// how smooth the ribbon looks, and the throughput headroom is there to spend.
+pub const DEFAULT_MAX_SCALE: u32 = 6;
 pub const MAX_SCALE: u32 = 6;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

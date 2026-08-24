@@ -35,6 +35,20 @@ Prebuilt binaries for Windows, macOS, and Linux arrive in Phase 5.
 - A terminal at least **86 × 30**. Below that the game shows a resize prompt
   rather than squashing the arena — the logic grid is a fixed 28 × 18 cells so
   scores stay comparable everywhere.
+- **A bigger window looks better.** The grid never changes size, so extra room
+  goes into pixels per cell, and a cell is only 3 to 6 pixels across — every
+  extra one is a visible gain in how smooth the ribbon reads. It never makes
+  the game easier.
+
+  | terminal | pixels per cell |
+  |---|---|
+  | 86 × 30 | 3 (playable, edges are coarse) |
+  | 120 × 40 | 4 |
+  | 142 × 48 | 5 |
+  | 170 × 57 | 6 (maximum) |
+
+  Widening the window or dropping the font size a couple of points is the
+  single cheapest visual upgrade.
 - **Truecolor** for the intended look. 256-colour terminals (notably macOS
   Terminal.app) fall back to the nearest indexed colours automatically.
   16-colour terminals are refused with a message instead of rendering mud.

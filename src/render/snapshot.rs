@@ -218,6 +218,50 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(debug_assertions, ignore = "run in release: cargo test --release snapshot")]
+    fn report_edge_softness_and_glow_extent() {
+        use crate::render::draw::{stroke_segment, Stroke};
+
+        for scale in [3u32, 4, 6] {
+            let st = Stroke::for_scale(scale);
+            let mut c = Canvas::new(64, 64);
+            c.clear_base([0.0; 3]);
+            stroke_segment(&mut c, (8.0, 32.0), (56.0, 32.0), [1.0; 3], &st);
+            let profile: Vec<String> = (28..=36)
+                .map(|y| format!("{:.2}", c.get(32, y)[0]))
+                .collect();
+            let partial = (28..=36)
+                .filter(|y| {
+                    let v = c.get(32, *y)[0];
+                    v > 0.12 && v < 0.88
+                })
+                .count();
+            println!(
+                "scale {scale}: r={:.2} f={:.2} reach={:.2} | cross-section {} | {partial} partially-lit px",
+                st.radius,
+                st.falloff,
+                st.radius + st.falloff,
+                profile.join(" ")
+            );
+        }
+
+        println!();
+        let mut c = Canvas::new(64, 64);
+        c.clear_base([0.0; 3]);
+        c.add_glow(32.0, 32.0, [1.0, 1.0, 1.0]);
+        c.blur_glow();
+        let peak = c.sample(32, 32)[0];
+        let prof: Vec<String> = (0..14)
+            .map(|d| format!("{:.3}", c.sample(32 + d, 32)[0] / peak))
+            .collect();
+        println!("glow falloff by pixel: {}", prof.join(" "));
+        let reach = (0..30)
+            .filter(|d| c.sample(32 + d, 32)[0] / peak > 0.10)
+            .count();
+        println!("glow stays above 10% of peak for {reach} px = {:.1} cells at scale 4", reach as f32 / 4.0);
+    }
+
+    #[test]
     fn the_encoder_agrees_with_the_quantizer() {
         // Guards the snapshot pipeline itself: a known linear value must reach
         // the same byte the real quantizer would emit.

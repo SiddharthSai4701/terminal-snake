@@ -22,16 +22,23 @@ impl Stroke {
     ///
     /// Two constraints pin these numbers. A fixed falloff makes the body
     /// entirely falloff at scale 3 - a smudge with no solid core - so both
-    /// terms scale. And `radius + falloff` must clear `floor(scale / 2)`, so
-    /// that when a tight coil puts body one cell from body there is still a
-    /// whole pixel in the gap that neither stroke reaches - otherwise the coil
-    /// merges into one blob. Half a cell is not enough: at an odd scale no
-    /// pixel lands on the exact midpoint, so 0.33 x scale is the usable bound.
+    /// terms scale.
+    ///
+    /// The falloff must also span at least a whole pixel. A cell is only 3 to 6
+    /// pixels across, so a sub-pixel falloff produces no intermediate coverage
+    /// at all and the body renders as a hard-edged bar - antialiasing that
+    /// exists in the arithmetic but never in the output.
+    ///
+    /// That competes with keeping a dark pixel between the parallel runs of a
+    /// tight coil, and at this resolution the edge wins: a coil that reads as a
+    /// slightly soft tube is far better than a snake with stair-stepped edges.
+    /// The gap still darkens to roughly a quarter of the core at scale 4 and
+    /// above.
     pub fn for_scale(scale: u32) -> Stroke {
         let s = scale as f32;
         Stroke {
-            radius: 0.24 * s,
-            falloff: 0.09 * s,
+            radius: 0.19 * s,
+            falloff: 0.36 * s,
             pixel_aspect: 1.0,
         }
     }
@@ -241,37 +248,57 @@ mod tests {
     }
 
     #[test]
-    fn the_ribbon_always_leaves_a_clear_pixel_between_coiled_runs() {
+    fn the_falloff_always_spans_at_least_one_pixel() {
+        // Below one pixel there are no intermediate coverage values and the
+        // antialiasing silently stops existing.
         for scale in 3..=6u32 {
             let st = Stroke::for_scale(scale);
-            // The nearest pixel inside a one-cell gap sits floor(scale/2) away
-            // from one of the two runs.
-            let bound = (scale / 2) as f32;
             assert!(
-                st.radius + st.falloff <= bound + 1e-6,
-                "scale {scale}: reach {} exceeds {bound}",
-                st.radius + st.falloff
+                st.falloff >= 1.0,
+                "scale {scale}: falloff {} is sub-pixel",
+                st.falloff
             );
         }
     }
 
     #[test]
-    fn two_parallel_runs_one_cell_apart_stay_separate() {
-        // A tight coil puts body one cell away from body. At every scale there
-        // must be a pixel in that gap which neither stroke reaches, or the coil
-        // reads as one solid blob instead of parallel runs.
+    fn a_body_cross_section_has_genuinely_soft_edges() {
         for scale in 3..=6u32 {
+            let mut c = blank(64, 64);
+            let st = Stroke::for_scale(scale);
+            stroke_segment(&mut c, (8.0, 32.0), (56.0, 32.0), [1.0; 3], &st);
+            let partial = (24..=40)
+                .filter(|y| {
+                    let v = c.get(32, *y)[0];
+                    v > 0.12 && v < 0.88
+                })
+                .count();
+            assert!(
+                partial >= 2,
+                "scale {scale}: {partial} partially-lit pixels - the edge is hard"
+            );
+        }
+    }
+
+    #[test]
+    fn two_parallel_runs_one_cell_apart_stay_distinguishable() {
+        // A tight coil puts body one cell from body. The gap need not be black,
+        // but it must be clearly darker than the body either side of it.
+        for scale in 4..=6u32 {
             let mut c = blank(64, 64);
             let st = Stroke::for_scale(scale);
             let s = scale as f32;
             let (y0, y1) = (32.0, 32.0 + s);
             stroke_segment(&mut c, (8.0, y0), (56.0, y0), [1.0; 3], &st);
             stroke_segment(&mut c, (8.0, y1), (56.0, y1), [1.0; 3], &st);
-
+            let core = c.get(32, y0 as i32)[0];
             let gap = (y0 as i32 + 1..y1 as i32)
                 .map(|y| c.get(32, y)[0])
                 .fold(f32::INFINITY, f32::min);
-            assert!(gap < 0.05, "scale {scale}: the runs merged, gap {gap}");
+            assert!(
+                gap < core * 0.45,
+                "scale {scale}: gap {gap} against core {core} - the coil merged"
+            );
         }
     }
 
