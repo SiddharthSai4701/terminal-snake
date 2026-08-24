@@ -33,8 +33,12 @@ impl Stroke {
     /// its cell.
     pub fn body(scale: u32) -> Stroke {
         Stroke {
-            radius: 0.38 * scale as f32,
-            falloff: 0.6,
+            // Exactly half a cell, measured centre-to-centre between the outer
+            // pixels, so an axis-aligned run lights its cell's pixels at full
+            // coverage and the next pixel out at none. Anything larger leaves a
+            // partly-lit fringe in the neighbouring cell.
+            radius: (scale as f32 - 1.0) / 2.0,
+            falloff: 0.5,
             pixel_aspect: 1.0,
         }
     }
@@ -253,16 +257,23 @@ mod tests {
     }
 
     #[test]
-    fn the_body_fills_its_cell_and_no_more() {
+    fn the_body_fills_its_cell_exactly_with_no_fringe() {
+        use crate::render::ribbon::cell_centre;
         for scale in 3..=6u32 {
             let mut c = blank(64, 64);
             let st = Stroke::body(scale);
-            stroke_segment(&mut c, (8.0, 32.0), (56.0, 32.0), [1.0; 3], &st);
-            let lit = (20..=44).filter(|y| c.get(32, *y)[0] > 0.5).count();
-            assert!(
-                lit <= scale as usize && lit >= scale as usize - 1,
-                "scale {scale}: body is {lit} pixels thick"
-            );
+            let y = cell_centre(6, scale as i32);
+            stroke_segment(&mut c, (8.0, y), (56.0, y), [1.0; 3], &st);
+
+            let full = (0..64).filter(|py| c.get(32, *py)[0] > 0.99).count();
+            let partial = (0..64)
+                .filter(|py| {
+                    let v = c.get(32, *py)[0];
+                    v > 0.001 && v < 0.99
+                })
+                .count();
+            assert_eq!(full, scale as usize, "scale {scale}: {full} full pixels");
+            assert_eq!(partial, 0, "scale {scale}: {partial} fringe pixels");
         }
     }
 

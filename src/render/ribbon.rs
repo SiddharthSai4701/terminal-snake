@@ -16,8 +16,15 @@ use crate::game::types::{GRID_H, GRID_W};
 /// spans most of the grid, so there is a wide margin between the two.
 pub const SEG_BREAK: f32 = 3.0;
 
+/// Centre of a logic cell in canvas pixel coordinates.
+///
+/// A cell covers pixels `[1 + c*s .. 1 + c*s + s - 1]`, whose centre is
+/// `(s - 1) / 2` past the first - not `s / 2`. Half a pixel of error puts the
+/// body off-centre in its own cell, which at an even scale spills a fringe row
+/// into the neighbouring cell and, once half blocks pair the rows up, shows as
+/// dim banding along the top and bottom of the snake.
 pub fn cell_centre(c: i32, scale: i32) -> f32 {
-    1.0 + c as f32 * scale as f32 + scale as f32 / 2.0
+    1.0 + c as f32 * scale as f32 + (scale as f32 - 1.0) / 2.0
 }
 
 /// Head-first polyline in canvas pixel coordinates.
@@ -43,9 +50,9 @@ pub fn snake_path(snake: &Snake, t: f32, scale: i32, wrap: bool) -> Vec<(f32, f3
     if !wrap {
         // Without wrapping the head must not poke through the border on the
         // frame before a wall death.
-        let min = 1.0 + s / 2.0;
-        pts[0].0 = pts[0].0.clamp(min, 1.0 + GRID_W as f32 * s - s / 2.0);
-        pts[0].1 = pts[0].1.clamp(min, 1.0 + GRID_H as f32 * s - s / 2.0);
+        let half = (s - 1.0) / 2.0;
+        pts[0].0 = pts[0].0.clamp(1.0 + half, 1.0 + GRID_W as f32 * s - 1.0 - half);
+        pts[0].1 = pts[0].1.clamp(1.0 + half, 1.0 + GRID_H as f32 * s - 1.0 - half);
     }
 
     // The tail is pulled toward its predecessor unless the snake is growing,
@@ -80,7 +87,7 @@ mod tests {
         let p = snake_path(&s, 0.0, 4, false);
         assert_eq!(p.len(), 4);
         assert!(
-            (p[0].0 - (1.0 + 9.0 * 4.0 + 2.0)).abs() < 1e-3,
+            (p[0].0 - cell_centre(9, 4)).abs() < 1e-3,
             "head should sit at its cell centre, got {:?}",
             p[0]
         );
@@ -126,8 +133,24 @@ mod tests {
     fn the_head_never_leaves_the_arena_in_non_wrapping_modes() {
         let s = Snake::new(Pos::new(GRID_W - 1, 9), 3, Direction::Right);
         let p = snake_path(&s, 1.0, 4, false);
-        let max_x = 1.0 + GRID_W as f32 * 4.0 - 2.0;
+        let max_x = cell_centre(GRID_W - 1, 4);
         assert!(p[0].0 <= max_x + 1e-3, "head at {} exceeded {}", p[0].0, max_x);
+    }
+
+    #[test]
+    fn a_cell_centre_sits_in_the_middle_of_the_pixels_that_cell_covers() {
+        for scale in 3..=6i32 {
+            for cell in [0, 5, 17] {
+                let lo = 1.0 + (cell * scale) as f32;
+                let hi = lo + scale as f32 - 1.0;
+                let mid = (lo + hi) / 2.0;
+                assert!(
+                    (cell_centre(cell, scale) - mid).abs() < 1e-6,
+                    "scale {scale} cell {cell}: {} should be {mid}",
+                    cell_centre(cell, scale)
+                );
+            }
+        }
     }
 
     #[test]
