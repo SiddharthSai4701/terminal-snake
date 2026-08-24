@@ -153,10 +153,39 @@ impl Canvas {
         }
     }
 
+    /// Bilinear upsample from the half-resolution glow buffer.
+    ///
+    /// Nearest-neighbour here makes every 2x2 group of pixels identical, which
+    /// on screen reads as hard-edged rectangles around anything that glows -
+    /// the exact opposite of bloom.
     fn glow_at(&self, x: i32, y: i32) -> Rgb {
-        let gx = (x / 2).clamp(0, self.gw as i32 - 1) as usize;
-        let gy = (y / 2).clamp(0, self.gh as i32 - 1) as usize;
-        self.glow[gy * self.gw + gx]
+        // A half-res texel `j` covers full-res pixels 2j and 2j+1, so its
+        // centre sits at full-res coordinate 2j + 1.0.
+        let fx = (x as f32 - 0.5) * 0.5;
+        let fy = (y as f32 - 0.5) * 0.5;
+        let x0 = fx.floor();
+        let y0 = fy.floor();
+        let tx = fx - x0;
+        let ty = fy - y0;
+
+        let at = |gx: i32, gy: i32| -> Rgb {
+            let cx = gx.clamp(0, self.gw as i32 - 1) as usize;
+            let cy = gy.clamp(0, self.gh as i32 - 1) as usize;
+            self.glow[cy * self.gw + cx]
+        };
+        let (ix, iy) = (x0 as i32, y0 as i32);
+        let c00 = at(ix, iy);
+        let c10 = at(ix + 1, iy);
+        let c01 = at(ix, iy + 1);
+        let c11 = at(ix + 1, iy + 1);
+
+        let mut out = [0.0f32; 3];
+        for k in 0..3 {
+            let top = c00[k] * (1.0 - tx) + c10[k] * tx;
+            let bot = c01[k] * (1.0 - tx) + c11[k] * tx;
+            out[k] = top * (1.0 - ty) + bot * ty;
+        }
+        out
     }
 
     // --- trail layer ------------------------------------------------------
@@ -462,6 +491,48 @@ mod tests {
         let mut b = buf(4, 2);
         c.quantize_into(&mut b, (0, 0), ColorTier::Full, (-99.0, -99.0));
         assert!(matches!(b[(0, 0)].bg, Color::Rgb(r, _, _) if r > 0));
+    }
+
+    #[test]
+    fn the_glow_upsample_is_smooth_not_blocky() {
+        // Nearest-neighbour upsampling of a half-resolution buffer makes every
+        // 2x2 group of pixels identical, which reads on screen as hard-edged
+        // rectangles around anything that glows.
+        let mut c = Canvas::new(32, 32);
+        c.clear_base([0.0; 3]);
+        c.add_glow(16.0, 16.0, [1.0, 1.0, 1.0]);
+        c.blur_glow();
+        let a = c.sample(12, 16)[0];
+        let b = c.sample(13, 16)[0];
+        assert!(
+            (a - b).abs() > 1e-6,
+            "pixels {a} and {b} are identical: the upsample is nearest-neighbour"
+        );
+    }
+
+    #[test]
+    fn glow_has_no_flat_plateaus_across_a_gradient() {
+        let mut c = Canvas::new(64, 64);
+        c.clear_base([0.0; 3]);
+        c.add_glow(32.0, 32.0, [1.0, 1.0, 1.0]);
+        c.blur_glow();
+
+        // Only inspect where there is actually light: outside the blur's reach
+        // the buffer is legitimately zero, and zeros are flat for good reason.
+        let lit: Vec<f32> = (0..64)
+            .map(|x| c.sample(x, 32)[0])
+            .filter(|v| *v > 1e-6)
+            .collect();
+        assert!(lit.len() > 6, "only {} lit pixels to inspect", lit.len());
+        let repeats = lit
+            .windows(2)
+            .filter(|w| (w[0] - w[1]).abs() < 1e-9)
+            .count();
+        assert!(
+            repeats <= 1,
+            "{repeats} flat steps across {} lit pixels: upsample is blocky",
+            lit.len()
+        );
     }
 
     #[test]

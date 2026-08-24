@@ -12,7 +12,7 @@ pub const DEATH_PARTICLES: usize = 400;
 pub const EAT_PARTICLES: usize = 26;
 
 const SHAKE_TAU: f32 = 0.10;
-const FLASH_TAU: f32 = 0.13;
+const FLASH_TAU: f32 = 0.075;
 const GRAVITY: f32 = 26.0;
 const EAT_SHAKE: f32 = 0.8;
 const DEATH_SHAKE: f32 = 3.2;
@@ -32,6 +32,7 @@ pub struct Fx {
     rng: Pcg32,
     shake: f32,
     flash: f32,
+    flash_at: (f32, f32),
     clock: f32,
 }
 
@@ -42,6 +43,7 @@ impl Fx {
             rng: Pcg32::new(seed),
             shake: 0.0,
             flash: 0.0,
+            flash_at: (0.0, 0.0),
             clock: 0.0,
         }
     }
@@ -53,6 +55,12 @@ impl Fx {
 
     pub fn flash(&self) -> f32 {
         self.flash
+    }
+
+    /// Where the flash is centred, so it reads as an impact rather than a
+    /// full-screen wash.
+    pub fn flash_at(&self) -> (f32, f32) {
+        self.flash_at
     }
 
     fn unit(&mut self) -> f32 {
@@ -133,6 +141,7 @@ impl Fx {
         }
         self.shake = DEATH_SHAKE;
         self.flash = 1.0;
+        self.flash_at = path[0];
     }
 
     /// Decaying offset applied to the canvas sample origin.

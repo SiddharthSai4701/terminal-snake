@@ -135,6 +135,7 @@ impl Game {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub fn force_food_at(&mut self, p: Pos) {
         self.food = p;
     }

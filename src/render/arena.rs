@@ -13,6 +13,14 @@ use crate::render::theme::Theme;
 /// How fast the gloss band travels along the body, in body-lengths per second.
 const HIGHLIGHT_SPEED: f32 = 0.55;
 const HIGHLIGHT_WIDTH: f32 = 0.13;
+/// Steady-state trail brightness under a stationary head, as a multiple of the
+/// theme's glow tint.
+const TRAIL_STRENGTH: f32 = 0.55;
+/// Radius of the death flash as a fraction of the canvas width.
+const FLASH_SIGMA: f32 = 0.16;
+/// How much of the flash reaches the far corners. Small on purpose: a uniform
+/// additive flash lifts pure black to mid grey and hides the whole arena.
+const FLASH_AMBIENT: f32 = 0.06;
 
 fn scale_rgb(c: Rgb, k: f32) -> Rgb {
     [c[0] * k, c[1] * k, c[2] * k]
@@ -104,11 +112,20 @@ pub fn draw_arena(
         let head = path[0];
         disc(c, head, stroke.radius * 1.05, theme.body_head, 1.0);
         c.add_glow(head.0, head.1, scale_rgb(theme.glow_tint, 0.85));
-        c.add_trail(
-            head.0.round() as i32,
-            head.1.round() as i32,
-            scale_rgb(theme.glow_tint, 0.7),
-        );
+
+        // Deposited as a RATE, not a per-frame amount. A fixed amount per frame
+        // converges to deposit/(1 - exp(-dt/tau)) - about nine times the
+        // intended value at 60fps - and lands somewhere different on every
+        // refresh rate. Scaling by dt/tau makes the steady state exactly
+        // TRAIL_STRENGTH regardless of frame rate.
+        if game.state == GameState::Running {
+            let deposit = TRAIL_STRENGTH * (dt / theme.trail_tau).min(1.0);
+            c.add_trail(
+                head.0.round() as i32,
+                head.1.round() as i32,
+                scale_rgb(theme.glow_tint, deposit),
+            );
+        }
     } else {
         // Once dead the body has been handed to the particle system; leave a
         // dim ghost of where it was.
@@ -128,11 +145,17 @@ pub fn draw_arena(
     if flash > 0.0 {
         let w = c.width() as i32;
         let h = c.height() as i32;
-        let add = [flash * 0.9, flash * 0.9, flash * 0.9];
+        let (cx, cy) = fx.flash_at();
+        let sigma = c.width() as f32 * FLASH_SIGMA;
+        let inv = 1.0 / (2.0 * sigma * sigma);
         for y in 0..h {
             for x in 0..w {
+                let dx = x as f32 - cx;
+                let dy = y as f32 - cy;
+                let radial = (-(dx * dx + dy * dy) * inv).exp();
+                let k = flash * (FLASH_AMBIENT + (1.0 - FLASH_AMBIENT) * radial);
                 let base = c.get(x, y);
-                c.set(x, y, add_rgb(base, add));
+                c.set(x, y, add_rgb(base, [k, k, k]));
             }
         }
     }
@@ -265,17 +288,77 @@ mod tests {
     }
 
     #[test]
-    fn a_flash_brightens_the_whole_canvas() {
-        let (g, l, mut c, mut fx, th) = setup(1);
-        draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
-        let corner_before = c.sample(l.canvas_w as i32 / 2, 4).iter().sum::<f32>();
-        fx.emit_death(&[(10.0, 10.0)], th.body_head);
-        draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
-        let corner_after = c.sample(l.canvas_w as i32 / 2, 4).iter().sum::<f32>();
+    fn the_trail_does_not_pile_up_while_the_snake_is_waiting_to_start() {
+        // Before the first keypress the head never moves, so depositing trail
+        // once per frame accumulates on a single cell until it clips.
+        let (g, l, mut c, fx, th) = setup(1);
+        let (x, y) = cell_px(&l, g.snake().head().x, g.snake().head().y);
+        for _ in 0..240 {
+            draw_arena(&mut c, &g, &l, &th, &fx, 1.0 / 60.0, 0.0);
+        }
+        let lit = c.sample(x, y);
         assert!(
-            corner_after > corner_before + 0.5,
-            "{corner_before} -> {corner_after}"
+            lit.iter().all(|v| *v <= 1.6),
+            "an idle head blew out to {lit:?}"
         );
+    }
+
+    #[test]
+    fn the_trail_looks_the_same_at_thirty_and_sixty_frames_per_second() {
+        let sample_at = |dt: f32, frames: usize| {
+            let (mut g, l, mut c, fx, th) = setup(3);
+            let mut q = DirQueue::new(Direction::Right);
+            g.start();
+            let start = g.snake().head();
+            draw_arena(&mut c, &g, &l, &th, &fx, dt, 0.0);
+            for i in 0..frames {
+                g.advance(dt, &mut q);
+                draw_arena(&mut c, &g, &l, &th, &fx, dt, i as f32 * dt);
+            }
+            let (x, y) = cell_px(&l, start.x, start.y);
+            c.sample(x, y).iter().sum::<f32>()
+        };
+        let sixty = sample_at(1.0 / 60.0, 48);
+        let thirty = sample_at(1.0 / 30.0, 24);
+        assert!(
+            (sixty - thirty).abs() < 0.1 * sixty.max(thirty).max(1e-3),
+            "frame-rate dependent trail: 60fps {sixty}, 30fps {thirty}"
+        );
+    }
+
+    #[test]
+    fn a_flash_is_centred_on_the_death_rather_than_washing_the_screen() {
+        let (g, l, mut c, mut fx, th) = setup(1);
+        let centre = (
+            cell_centre(g.snake().head().x, l.scale as i32),
+            cell_centre(g.snake().head().y, l.scale as i32),
+        );
+        draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
+        let far_before = c.sample(l.canvas_w as i32 - 4, 4).iter().sum::<f32>();
+
+        fx.emit_death(&[centre], th.body_head);
+        draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
+
+        let near = c.sample(centre.0 as i32, centre.1 as i32).iter().sum::<f32>();
+        let far = c.sample(l.canvas_w as i32 - 4, 4).iter().sum::<f32>();
+        assert!(near > 1.5, "the flash should be bright at the impact: {near}");
+        assert!(
+            far < far_before + 0.35,
+            "the far corner washed out to {far} from {far_before}"
+        );
+    }
+
+    #[test]
+    fn a_flash_is_over_quickly() {
+        let (g, l, mut c, mut fx, th) = setup(1);
+        fx.emit_death(&[(20.0, 20.0)], th.body_head);
+        // A quarter of a second later it must be gone, not a lingering grey veil.
+        for _ in 0..15 {
+            fx.update(1.0 / 60.0);
+        }
+        draw_arena(&mut c, &g, &l, &th, &fx, 0.016, 0.0);
+        let corner = c.sample(l.canvas_w as i32 - 4, 4).iter().sum::<f32>();
+        assert!(corner < 0.2, "still washed out after 250ms: {corner}");
     }
 
     #[test]
@@ -293,15 +376,23 @@ mod tests {
     #[test]
     fn the_gloss_band_moves_with_the_clock() {
         let (g, l, mut a, fx, th) = setup(1);
+        // Sample the row the body actually occupies, not the middle of the
+        // canvas - the ribbon is narrower than a cell.
+        let row = cell_centre(g.snake().head().y, l.scale as i32) as i32;
+        let brightness = |c: &Canvas| -> f32 {
+            (0..c.width() as i32)
+                .map(|x| c.sample(x, row).iter().sum::<f32>())
+                .sum()
+        };
         draw_arena(&mut a, &g, &l, &th, &fx, 0.016, 0.0);
-        let sum_a: f32 = (0..a.width() as i32)
-            .map(|x| a.sample(x, l.canvas_h as i32 / 2).iter().sum::<f32>())
-            .sum();
+        let at_zero = brightness(&a);
         let mut b = Canvas::new(l.canvas_w, l.canvas_h);
         draw_arena(&mut b, &g, &l, &th, &fx, 0.016, 0.9);
-        let sum_b: f32 = (0..b.width() as i32)
-            .map(|x| b.sample(x, l.canvas_h as i32 / 2).iter().sum::<f32>())
-            .sum();
-        assert!((sum_a - sum_b).abs() > 1e-4, "the frame is static");
+        let later = brightness(&b);
+        assert!(at_zero > 0.1, "the sampled row missed the body entirely");
+        assert!(
+            (at_zero - later).abs() > 1e-4,
+            "the frame is static: {at_zero} vs {later}"
+        );
     }
 }

@@ -6,5 +6,6 @@ pub mod draw;
 pub mod fx;
 pub mod layout;
 pub mod ribbon;
+pub mod snapshot;
 pub mod theme;
 pub mod tier;

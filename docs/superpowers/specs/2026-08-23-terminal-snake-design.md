@@ -163,7 +163,11 @@ shoulder compresses. Overbright additive glow clips to white instead, which is
 how bloom is supposed to look, and it keeps the death flash actually white.
 
 **Trail decay is time-based, not frame-based:** `trail *= exp(-dt / tau)`, with
-`tau` a per-theme parameter in seconds. A per-frame constant makes the afterglow
+`tau` a per-theme parameter in seconds. **The deposit must be a rate too** — a
+fixed amount added per frame converges to `deposit / (1 - exp(-dt/tau))`, about
+nine times the intended value at 60fps, and lands somewhere different on every
+refresh rate. Scaling the deposit by `dt / tau` makes the steady state
+frame-rate independent. A per-frame constant makes the afterglow
 twice as long at 30fps and invisible at 144Hz. Shake decay and the highlight-band
 phase are likewise driven by `dt`.
 
@@ -217,10 +221,14 @@ length 250 → 250 × 121 ≈ 30,250 tests/frame ≈ 0.18 ms      (~125× cheape
 Coverage accumulates with `max` (the union of capsules is the min of distances,
 hence the max of coverages). Cost is `O(length × s²)`, independent of arena size.
 
-**Radius and falloff scale with `s`:** `r = 0.40·s`, `falloff = 0.5 + 0.15·s`. A
-fixed 1-px falloff at scale 3 makes the body *entirely* falloff — a smudge with
-no solid core. Scale 4 is the floor for the intended look; scale 3 is the
-degraded-but-playable fallback.
+**Radius and falloff scale with `s`:** `r = 0.24·s`, `falloff = 0.09·s`. Two
+constraints pin these. A fixed falloff makes the body *entirely* falloff at
+scale 3 — a smudge with no solid core — so both terms scale. And
+`r + falloff` must clear `floor(s / 2)`, so that when a tight coil puts body one
+cell from body there is still a whole pixel in the gap that neither stroke
+reaches; otherwise the coil merges into one blob. Half a cell is not enough,
+because at an odd scale no pixel lands on the exact midpoint, which makes
+`0.33·s` the usable bound.
 
 **Distance uses a `pixel_aspect: f32` multiplier.** "Half-blocks are square" holds
 for Cascadia Mono at Windows Terminal's default line height, but breaks under a
@@ -236,12 +244,19 @@ time-advancing highlight band, so the snake looks glossy even at rest.
   length) with drag and slight gravity. High combo: sparks trailing the head.
   Particles splat into the glow buffer.
 - **Glow blur** — the glow buffer is half resolution; splat, then run a
-  **separable 5-tap Gaussian (2 passes)**, then bilinear-upsample-add. *Additive
+  **separable 5-tap Gaussian (2 passes)**, then bilinear-upsample-add. The
+  upsample must genuinely be bilinear: nearest-neighbour makes every 2×2 group
+  of pixels identical, which reads on screen as hard-edged rectangles around
+  everything that glows — the exact opposite of bloom. *Additive
   brightness with no spatial spread is not bloom, it is just a brighter pixel* —
   without this pass the headline visual feature silently does not exist. Cost is
   ~136 K FMAs/frame, under 0.1 ms, and half resolution halves the splat cost too.
 - **Screen shake** — decaying random sample offset; small on eat, large on death.
-- **Flash** — full-canvas additive pulse, white on death, theme-tinted on eat.
+- **Flash** — a **radial** additive pulse centred on the impact, white on death.
+  It must not be a uniform full-canvas add: additive white lifts pure black to
+  mid grey and hides the whole arena behind a veil. A Gaussian of about 0.16 of
+  the canvas width, with roughly 6% reaching the far corners, and a ~75 ms
+  e-fold so it is over quickly.
 - **Backdrop** — per-theme, low intensity: vignette, drifting starfield, or
   scanlines. *Design intent, not a testable requirement:* it must not compete
   with the snake for attention.

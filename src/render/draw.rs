@@ -18,13 +18,20 @@ pub struct Stroke {
 }
 
 impl Stroke {
-    /// Radius and falloff both scale with the pixel scale. A fixed falloff at
-    /// scale 3 makes the body entirely falloff - a smudge with no solid core.
+    /// Radius and falloff both scale with the pixel scale.
+    ///
+    /// Two constraints pin these numbers. A fixed falloff makes the body
+    /// entirely falloff at scale 3 - a smudge with no solid core - so both
+    /// terms scale. And `radius + falloff` must clear `floor(scale / 2)`, so
+    /// that when a tight coil puts body one cell from body there is still a
+    /// whole pixel in the gap that neither stroke reaches - otherwise the coil
+    /// merges into one blob. Half a cell is not enough: at an odd scale no
+    /// pixel lands on the exact midpoint, so 0.33 x scale is the usable bound.
     pub fn for_scale(scale: u32) -> Stroke {
         let s = scale as f32;
         Stroke {
-            radius: 0.40 * s,
-            falloff: 0.5 + 0.15 * s,
+            radius: 0.24 * s,
+            falloff: 0.09 * s,
             pixel_aspect: 1.0,
         }
     }
@@ -230,6 +237,41 @@ mod tests {
                 "scale {scale} has no solid core: {}",
                 c.get(16, 16)[0]
             );
+        }
+    }
+
+    #[test]
+    fn the_ribbon_always_leaves_a_clear_pixel_between_coiled_runs() {
+        for scale in 3..=6u32 {
+            let st = Stroke::for_scale(scale);
+            // The nearest pixel inside a one-cell gap sits floor(scale/2) away
+            // from one of the two runs.
+            let bound = (scale / 2) as f32;
+            assert!(
+                st.radius + st.falloff <= bound + 1e-6,
+                "scale {scale}: reach {} exceeds {bound}",
+                st.radius + st.falloff
+            );
+        }
+    }
+
+    #[test]
+    fn two_parallel_runs_one_cell_apart_stay_separate() {
+        // A tight coil puts body one cell away from body. At every scale there
+        // must be a pixel in that gap which neither stroke reaches, or the coil
+        // reads as one solid blob instead of parallel runs.
+        for scale in 3..=6u32 {
+            let mut c = blank(64, 64);
+            let st = Stroke::for_scale(scale);
+            let s = scale as f32;
+            let (y0, y1) = (32.0, 32.0 + s);
+            stroke_segment(&mut c, (8.0, y0), (56.0, y0), [1.0; 3], &st);
+            stroke_segment(&mut c, (8.0, y1), (56.0, y1), [1.0; 3], &st);
+
+            let gap = (y0 as i32 + 1..y1 as i32)
+                .map(|y| c.get(32, y)[0])
+                .fold(f32::INFINITY, f32::min);
+            assert!(gap < 0.05, "scale {scale}: the runs merged, gap {gap}");
         }
     }
 
